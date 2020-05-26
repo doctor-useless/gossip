@@ -3,45 +3,53 @@ import {
   isWebSocketCloseEvent,
   isWebSocketPingEvent,
   isWebSocketPongEvent,
-  WebSocket
+  WebSocket,
 } from "https://deno.land/std/ws/mod.ts";
 import { blue, green, red, yellow } from "https://deno.land/std/fmt/colors.ts";
-import { ByteArray } from "https://raw.githubusercontent.com/doctor-useless/tweetnacl-deno/master/src/nacl.ts";
-import { encodeTextToBase64 } from "./util.ts";
-
-class PeerConnection {
-  socket: WebSocket;
-  endpoint: string;
-  //messagesOut: AsyncIterableIterator<any>;
-
-  constructor (socket: WebSocket, endpoint: string /*, messagesOut: AsyncIterableIterator<any>*/) {
-    this.socket = socket;
-    this.endpoint = endpoint;
-    //this.messagesOut = messagesOut;
-  }
-}
+import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
+import { verifyWork } from "./pow.ts";
+import { Peer } from "./peer.ts";
+import { RoutingTable } from "./routing.ts";
 
 export class Client {
-  peerConnections: PeerConnection[];
+  peers: Peer[];
   publicKey: ByteArray;
   proofOfWork: ByteArray;
+  serverPort: number;
+  routingTable: RoutingTable;
 
-  constructor (publicKey: ByteArray, proofOfWork: ByteArray) {
-    this.peerConnections = [];
+  constructor(
+    publicKey: ByteArray,
+    proofOfWork: ByteArray,
+    serverPort: number,
+    routingTable: RoutingTable,
+  ) {
+    this.peers = [];
     this.publicKey = publicKey;
     this.proofOfWork = proofOfWork;
+    this.serverPort = serverPort;
+    this.routingTable = routingTable;
   }
 
-  async addConnection(endpoint: string /*, messagesOut: AsyncIterableIterator<any>*/) {
+  async addConnection(
+    address: string, /*, messagesOut: AsyncIterableIterator<any>*/
+  ) {
     try {
-      const socket = await connectWebSocket(endpoint);
-      const connection = new PeerConnection(socket, endpoint /*, messagesOut*/);
-      this.peerConnections.push(connection);
+      const socket = await connectWebSocket(address);
+      const peer = new Peer(socket, address /*, messagesOut*/);
 
-      this.listen(connection);
+      if (await this.shakeHand(peer) === false) {
+        socket.close();
+        console.log(red("handshake failed"));
+        return;
+      }
 
-      let initialMessage = JSON.stringify({publicKey: [...this.publicKey], proofOfWork: [...this.proofOfWork]});
-      socket.send(initialMessage);
+      // wait for routing table
+      await this.receiveRoutingTable(peer);
+
+      this.addPeer(peer);
+
+      this.listenForMore(peer);
 
       console.log(green("ws connected!"));
     } catch (err) {
@@ -49,43 +57,77 @@ export class Client {
     }
   }
 
-  async listen(connection: PeerConnection) {
-    const handleMessagesIn = async (): Promise<void> => {
-      for await (const msg of connection.socket) {
-        if (typeof msg === "string") {
-          try {
-            const json = JSON.parse(msg);
-            console.log(yellow(JSON.stringify(json)));
-          } catch {
-            // just text
-            console.log(yellow(`< ${msg}`));
-          }
-        } else if (isWebSocketPingEvent(msg)) {
-          console.log(blue("< ping"));
-        } else if (isWebSocketPongEvent(msg)) {
-          console.log(blue("< pong"));
-        } else if (isWebSocketCloseEvent(msg)) {
-          console.log(red(`closed: code=${msg.code}, reason=${msg.reason}`));
-        }
+  async listenForMore(peer: Peer): Promise<void> {
+    for await (const ev of peer.socket) {
+      console.log(ev);
+      if (isWebSocketCloseEvent(ev)) {
+        this.removePeer(peer);
       }
-    };
-
-    /*const handleMessagesOut = async (): Promise<void> => {
-      for await (const msg of connection.messagesOut) {
-        console.log(red('message out:'), msg);
-        if (typeof msg === "string") {
-          connection.socket.send(msg);
-        } else {
-          connection.socket.send(JSON.stringify(msg));
-        }
-      }
-    };*/
-
-    //await Promise.race([handleMessagesIn(), handleMessagesOut()]).catch(console.error);
-    await handleMessagesIn();
-
-    if (!connection.socket.isClosed) {
-      await connection.socket.close(1000).catch(console.error);
     }
+  }
+
+  async shakeHand(peer: Peer): Promise<Boolean> {
+    // initiate handshake
+    await peer.socket.send(
+      JSON.stringify(
+        {
+          publicKey: [...this.publicKey],
+          proofOfWork: [...this.proofOfWork],
+          serverPort: this.serverPort,
+        },
+      ),
+    );
+
+    for await (const msg of peer.socket) {
+      if (typeof msg === "string") {
+        try {
+          const data = JSON.parse(msg);
+          if (
+            data.proofOfWork && data.publicKey &&
+            verifyWork(data.proofOfWork, data.publicKey)
+          ) {
+            peer.isVerified = true;
+            peer.publicKey = data.publicKey;
+            return true;
+          } else {
+            return false;
+          }
+        } catch {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  async receiveRoutingTable(peer: Peer): Promise<void> {
+    for await (const msg of peer.socket) {
+      if (typeof msg === "string") {
+        try {
+          const data = JSON.parse(msg);
+          if (data.routes && data.routes.length > 0) {
+            this.routingTable.merge(new RoutingTable(data.routes));
+            return;
+          } else {
+            return;
+          }
+        } catch {
+          return;
+        }
+      }
+    }
+    return;
+  }
+
+  addPeer(peer: Peer) {
+    this.peers.push(peer);
+    this.routingTable.addPeer(peer);
+    console.log("peer added", peer.address, this.routingTable);
+  }
+
+  removePeer(peer: Peer) {
+    this.peers.splice(this.peers.indexOf(peer), 1);
+    this.routingTable.removePeer(peer);
+    console.log("peer removed", peer.address, this.routingTable);
   }
 }

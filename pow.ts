@@ -1,4 +1,4 @@
-import { randomBytes, ByteArray, hash } from "https://raw.githubusercontent.com/doctor-useless/tweetnacl-deno/master/src/nacl.ts";
+import { randomBytes, ByteArray, hash } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { POW_DIFICULTY } from "./config.ts";
 
 const randomBytesLength = 32;
