@@ -121,29 +121,16 @@ export async function getWorstPeer(bucket: Bucket): Promise<Peer | undefined> {
   let onlinePeers: Peer[] = [];
 
   for await (let p of bucket.peers) {
-    if (!p.socket || !p.socket.isClosed || !(await isOnline(p.socket))) {
-      offlinePeers.push(p);
-    } else {
+    if (await p.isOnline) {
       onlinePeers.push(p);
+    } else {
+      offlinePeers.push(p);
     }
   }
 
   if (offlinePeers.length > 0) {
     return offlinePeers.sort((a, b) => b.dateAdded - a.dateAdded)[0];
   }
-  return undefined;
-}
 
-async function isOnline(socket: WebSocket): Promise<Boolean> {
-  // ping him
-  socket.ping();
-  const pingPromise = async () => {
-    for await (const ev of socket) {
-      if (isWebSocketPongEvent(ev)) {
-        return true;
-      }
-    }
-  };
-  await Promise.race([pingPromise, wait(PING_TIMEOUT)]);
-  return false;
+  return undefined;
 }

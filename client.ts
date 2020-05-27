@@ -45,12 +45,11 @@ export class Client {
 
       await this.peerTable.addPeer(peer);
 
-      // wait for peer table
       await this.receivePeerList(socket);
 
-      this.listenForMore(peer);
-
       console.log(green("ws connected!"));
+
+      await this.listenForMore(peer);
     } catch (err) {
       console.error(red(`Could not connect to WebSocket: '${err}'`));
     }
@@ -59,9 +58,6 @@ export class Client {
   async listenForMore(peer: Peer): Promise<void> {
     for await (const ev of peer.socket) {
       console.log(ev);
-      if (isWebSocketCloseEvent(ev)) {
-        // remove peer
-      }
     }
   }
 
