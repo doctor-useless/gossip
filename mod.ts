@@ -6,35 +6,35 @@ import {
 import { doWork, verifyWork } from "./pow.ts";
 import { Server } from "./server.ts";
 import { Client } from "./client.ts";
-import { SERVER_PORT } from "./config.ts";
-import { RoutingTable } from "./routing.ts";
+import { SERVER_PORT, KEY_LENGTH } from "./config.ts";
+import { PeerTable } from "./routing.ts";
 
 const keyPair = box_keyPair_fromSecretKey(
-  hash(new TextEncoder().encode(Deno.args[0]), 32),
+  hash(new TextEncoder().encode(Deno.args[0]), KEY_LENGTH),
 );
 let proofOfWork = await doWork(keyPair.publicKey);
 
 const serverPort = Number.parseInt(Deno.args[1]) || SERVER_PORT;
 
-// init routing table
-let routingTable = new RoutingTable();
+// init peer table
+let peerTable = new PeerTable(keyPair.publicKey);
 
 // init server
 let server = new Server(
   serverPort,
   keyPair.publicKey,
   proofOfWork,
-  routingTable,
+  peerTable,
 );
 server.listen();
 
 // init client
 let client = new Client(
+  serverPort,
   keyPair.publicKey,
   proofOfWork,
-  serverPort,
-  routingTable,
+  peerTable,
 );
-if (Deno.args[2]) {
-  client.addConnection(Deno.args[2]); // || `ws://127.0.0.1:${SERVER_PORT}`);
+if (Deno.args[2] && Deno.args[3]) {
+  client.connect(Deno.args[2], Number.parseInt(Deno.args[3]));
 }

@@ -9,34 +9,33 @@ import { blue, green, red, yellow } from "https://deno.land/std/fmt/colors.ts";
 import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { verifyWork } from "./pow.ts";
 import { Peer } from "./peer.ts";
-import { RoutingTable } from "./routing.ts";
+import { PeerTable } from "./routing.ts";
 
 export class Client {
-  peers: Peer[];
+  serverPort: number;
   publicKey: ByteArray;
   proofOfWork: ByteArray;
-  serverPort: number;
-  routingTable: RoutingTable;
+  peerTable: PeerTable;
 
   constructor(
+    serverPort: number,
     publicKey: ByteArray,
     proofOfWork: ByteArray,
-    serverPort: number,
-    routingTable: RoutingTable,
+    peerTable: PeerTable,
   ) {
-    this.peers = [];
     this.publicKey = publicKey;
     this.proofOfWork = proofOfWork;
     this.serverPort = serverPort;
-    this.routingTable = routingTable;
+    this.peerTable = peerTable;
   }
 
-  async addConnection(
-    address: string, /*, messagesOut: AsyncIterableIterator<any>*/
+  async connect(
+    hostname: string,
+    port: number,
   ) {
     try {
-      const socket = await connectWebSocket(address);
-      const peer = new Peer(socket, address /*, messagesOut*/);
+      const socket = await connectWebSocket(`${hostname}:${port}`);
+      const peer = new Peer(socket, false, hostname, port);
 
       if (await this.shakeHand(peer) === false) {
         socket.close();
@@ -44,10 +43,10 @@ export class Client {
         return;
       }
 
-      // wait for routing table
-      await this.receiveRoutingTable(peer);
+      await this.peerTable.addPeer(peer);
 
-      this.addPeer(peer);
+      // wait for peer table
+      await this.receivePeerList(socket);
 
       this.listenForMore(peer);
 
@@ -61,7 +60,7 @@ export class Client {
     for await (const ev of peer.socket) {
       console.log(ev);
       if (isWebSocketCloseEvent(ev)) {
-        this.removePeer(peer);
+        // remove peer
       }
     }
   }
@@ -100,13 +99,36 @@ export class Client {
     return false;
   }
 
-  async receiveRoutingTable(peer: Peer): Promise<void> {
-    for await (const msg of peer.socket) {
+  async receivePeerList(socket: WebSocket): Promise<void> {
+    for await (const msg of socket) {
       if (typeof msg === "string") {
         try {
-          const data = JSON.parse(msg);
-          if (data.routes && data.routes.length > 0) {
-            this.routingTable.merge(new RoutingTable(data.routes));
+          const peerList: Peer[] = JSON.parse(msg);
+
+          console.log(
+            (socket.conn.remoteAddr as Deno.NetAddr).port,
+            "got peer list",
+          );
+
+          if (peerList) {
+            peerList.forEach((peer) => {
+              // if not self, add peer to own table
+              if (
+                peer.publicKey !== this.publicKey && peer.hostname &&
+                peer.port && !this.peerTable.hasPeer(peer)
+              ) {
+                console.log(
+                  "dont have",
+                  peer.port,
+                  peer.publicKey,
+                  "connecting...",
+                );
+                this.connect(
+                  (peer.hostname as string),
+                  (peer.port as number),
+                );
+              }
+            });
             return;
           } else {
             return;
@@ -117,17 +139,5 @@ export class Client {
       }
     }
     return;
-  }
-
-  addPeer(peer: Peer) {
-    this.peers.push(peer);
-    this.routingTable.addPeer(peer);
-    console.log("peer added", peer.address, this.routingTable);
-  }
-
-  removePeer(peer: Peer) {
-    this.peers.splice(this.peers.indexOf(peer), 1);
-    this.routingTable.removePeer(peer);
-    console.log("peer removed", peer.address, this.routingTable);
   }
 }

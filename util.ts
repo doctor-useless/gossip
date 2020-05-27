@@ -2,13 +2,12 @@ import {
   encodeBase64,
   decodeBase64,
 } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
-import { Peer } from "./peer.ts";
 
-async function wait(): Promise<void> {
+export async function wait(timeout: number): Promise<void> {
   return new Promise((res, rej) => {
     setTimeout(() => {
       res();
-    }, 1000);
+    }, timeout);
   });
 }
 

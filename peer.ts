@@ -3,29 +3,26 @@ import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnac
 
 export class Peer {
   socket: WebSocket;
-  address: string | null;
+  isClient: Boolean;
+  hostname: string | null;
+  port: number | null;
   isVerified: Boolean;
   publicKey: ByteArray | null;
-  //messagesOut: AsyncIterableIterator<any>;
+  dateAdded: number;
 
   constructor(
     socket: WebSocket,
-    address?: string,
+    isClient: Boolean,
+    hostname?: string,
+    port?: number,
     publicKey?: ByteArray,
-    /*, messagesOut: AsyncIterableIterator<any>*/
   ) {
     this.socket = socket;
-    this.address = address || null;
+    this.isClient = isClient;
+    this.hostname = hostname || null;
+    this.port = port || null;
     this.isVerified = false;
     this.publicKey = publicKey || null;
-    //this.messagesOut = messagesOut;
-  }
-}
-
-export class PeerList {
-  peers: Peer[];
-
-  constructor(peers?: Peer[]) {
-    this.peers = peers || [];
+    this.dateAdded = Date.now();
   }
 }
