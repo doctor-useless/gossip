@@ -6,7 +6,11 @@ import {
   WebSocket,
 } from "https://deno.land/std/ws/mod.ts";
 import { blue, green, red, yellow } from "https://deno.land/std/fmt/colors.ts";
-import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
+import {
+  ByteArray,
+  hash,
+  box_keyPair_fromSecretKey,
+} from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { verifyWork } from "./pow.ts";
 import { Peer } from "./peer.ts";
 import { PeerTable } from "./routing.ts";
@@ -48,16 +52,8 @@ export class Client {
       await this.receivePeerList(socket);
 
       console.log(green("ws connected!"));
-
-      await this.listenForMore(peer);
     } catch (err) {
       console.error(red(`Could not connect to WebSocket: '${err}'`));
-    }
-  }
-
-  async listenForMore(peer: Peer): Promise<void> {
-    for await (const ev of peer.socket) {
-      console.log(ev);
     }
   }
 
@@ -100,12 +96,6 @@ export class Client {
       if (typeof msg === "string") {
         try {
           const peerList: Peer[] = JSON.parse(msg);
-
-          console.log(
-            (socket.conn.remoteAddr as Deno.NetAddr).port,
-            "got peer list",
-          );
-
           if (peerList) {
             peerList.forEach((peer) => {
               // if not self, add peer to own table
@@ -113,12 +103,6 @@ export class Client {
                 peer.publicKey !== this.publicKey && peer.hostname &&
                 peer.port && !this.peerTable.hasPeer(peer)
               ) {
-                console.log(
-                  "dont have",
-                  peer.port,
-                  peer.publicKey,
-                  "connecting...",
-                );
                 this.connect(
                   (peer.hostname as string),
                   (peer.port as number),

@@ -46,10 +46,14 @@ export class Server {
         bufWriter,
         headers,
       });
-      const peer = new Peer(socket, true);
+      const peer = new Peer(
+        socket,
+        true,
+        `ws://${(conn.remoteAddr as Deno.NetAddr).hostname}`,
+      );
 
       // exchange keys & poof of work
-      if (await this.shakeHand(peer, conn) === false) {
+      if (await this.shakeHand(peer) === false) {
         if (!socket.isClosed) {
           socket.close();
         }
@@ -61,14 +65,14 @@ export class Server {
 
       await this.peerTable.addPeer(peer);
 
-      await this.listenForMore(peer);
+      //await this.listenForMore(socket);
     } catch (err) {
       console.error(`failed to accept websocket: ${err}`);
       await req.respond({ status: 400 });
     }
   }
 
-  async shakeHand(peer: Peer, conn: Deno.Conn): Promise<Boolean> {
+  async shakeHand(peer: Peer): Promise<Boolean> {
     // wait for initial message
     for await (const ev of peer.socket) {
       if (typeof ev === "string") {
@@ -80,9 +84,6 @@ export class Server {
           ) {
             peer.isVerified = true;
             peer.publicKey = data.publicKey;
-            peer.hostname = `ws://${
-              (conn.remoteAddr as Deno.NetAddr).hostname
-            }`;
             peer.port = data.serverPort;
             await peer.socket.send(
               JSON.stringify(
@@ -94,11 +95,10 @@ export class Server {
             );
             return true;
           } else {
-            console.log(red("verification failed"));
             return false;
           }
-        } catch {
-          console.warn("msg not JSON", ev);
+        } catch (err) {
+          console.error(err);
           return false;
         }
       }
@@ -110,12 +110,40 @@ export class Server {
     await socket.send(JSON.stringify(this.peerTable.getPeerList()));
   }
 
-  async listenForMore(peer: Peer): Promise<void> {
-    for await (const ev of peer.socket) {
-      console.log(ev);
-      if (isWebSocketCloseEvent(ev)) {
-        // remove peer
+  /*async listenForMore(socket: WebSocket): Promise<void> {
+    for await (const msg of socket) {
+      if (typeof msg === "string") {
+        try {
+          const data = JSON.parse(msg);
+
+          if (data.request) {
+            // handle request
+            switch (data.request.type) {
+              case "find_peer":
+                await socket.send(
+                  JSON.stringify(
+                    {
+                      response: {
+                        type: "find_peer",
+                        body: [
+                          ...await this.peerTable.findPeer(
+                            data.request.params.publicKey,
+                          ),
+                        ],
+                      },
+                    },
+                  ),
+                );
+              default:
+                console.log(msg);
+            }
+          } else if (data.response) {
+            // handle response
+          }
+        } catch (err) {
+          console.log("bad request", err, msg);
+        }
       }
     }
-  }
+  }*/
 }

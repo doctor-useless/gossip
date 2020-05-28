@@ -8,6 +8,7 @@ import { Server } from "./server.ts";
 import { Client } from "./client.ts";
 import { SERVER_PORT, KEY_LENGTH } from "./config.ts";
 import { PeerTable } from "./routing.ts";
+import { Worker } from "./worker.ts";
 
 const keyPair = box_keyPair_fromSecretKey(
   hash(new TextEncoder().encode(Deno.args[0]), KEY_LENGTH),
@@ -18,6 +19,9 @@ const serverPort = Number.parseInt(Deno.args[1]) || SERVER_PORT;
 
 // init peer table
 let peerTable = new PeerTable(keyPair.publicKey);
+
+// init worker
+let worker = new Worker(keyPair.publicKey, proofOfWork, serverPort, peerTable);
 
 // init server
 let server = new Server(

@@ -4,8 +4,13 @@ import {
 } from "https://deno.land/std/ws/mod.ts";
 import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { Peer } from "./peer.ts";
-import { KEY_LENGTH, BUCKET_SIZE_MAX, PING_TIMEOUT } from "./config.ts";
+import {
+  KEY_LENGTH,
+  BUCKET_SIZE_MAX,
+  LOOKUP_CONCURRENCY,
+} from "./config.ts";
 import { wait } from "./util.ts";
+import { red } from "https://deno.land/std/fmt/colors.ts";
 
 export class Bucket {
   peers: Peer[];
@@ -91,13 +96,55 @@ export class PeerTable {
       p.publicKey?.toString() === peer.publicKey?.toString()
     ) !== undefined;
   }
+
+  async getClosestPeers(publicKey: ByteArray): Promise<Peer[]> {
+    let closestPeers: Peer[] = [];
+    const peersRequired = () => LOOKUP_CONCURRENCY - closestPeers.length;
+
+    const distance = calculateDistance(this.publicKey, publicKey);
+    closestPeers.push(...this.buckets[distance].peers);
+
+    let left = distance - 1;
+    let right = distance + 1;
+    while (
+      closestPeers.length < BUCKET_SIZE_MAX && (left >= 0 ||
+        right < this.buckets.length)
+    ) {
+      if (left >= 0) {
+        const leftBucket = this.buckets[left];
+        if (leftBucket.peers.length > 0) {
+          closestPeers.push(
+            ...await getBestPeers(leftBucket, peersRequired()),
+          );
+        }
+      }
+      if (right < this.buckets.length && peersRequired() > 0) {
+        const rightBucket = this.buckets[right];
+        if (rightBucket.peers.length > 0) {
+          closestPeers.push(
+            ...await getBestPeers(rightBucket, peersRequired()),
+          );
+        }
+      }
+      left--;
+      right++;
+    }
+    return closestPeers;
+  }
+
+  async findPeer(publicKey: ByteArray): Promise<Peer | undefined> {
+    const distance = calculateDistance(this.publicKey, publicKey);
+    return this.buckets[distance].peers.find((p) =>
+      p.publicKey?.toString() === publicKey.toString()
+    );
+  }
 }
 
 /**
  * Returns the distance between two addresses
  * This is the MSB first numerical value of their XOR.
  */
-export function calculateDistance(
+function calculateDistance(
   publicKeyA: Uint8Array,
   publicKeyB: Uint8Array,
 ): number {
@@ -116,12 +163,12 @@ export function calculateDistance(
  * If all peers are online, returns undefined
  * @param bucket
  */
-export async function getWorstPeer(bucket: Bucket): Promise<Peer | undefined> {
+async function getWorstPeer(bucket: Bucket): Promise<Peer | undefined> {
   let offlinePeers: Peer[] = [];
   let onlinePeers: Peer[] = [];
 
   for await (let p of bucket.peers) {
-    if (await p.isOnline) {
+    if (await p.isOnline()) {
       onlinePeers.push(p);
     } else {
       offlinePeers.push(p);
@@ -133,4 +180,25 @@ export async function getWorstPeer(bucket: Bucket): Promise<Peer | undefined> {
   }
 
   return undefined;
+}
+
+/**
+ * Returns the oldest online peers in a bucket
+ * @param bucket to search
+ * @param count maximum number of peers to return
+ */
+async function getBestPeers(bucket: Bucket, max: number): Promise<Peer[]> {
+  let onlinePeers: Peer[] = [];
+  for await (let p of bucket.peers) {
+    if (await p.isOnline()) {
+      onlinePeers.push(p);
+    }
+  }
+  if (onlinePeers.length <= max) {
+    return onlinePeers;
+  } else {
+    return onlinePeers
+      .sort((a, b) => b.dateAdded - a.dateAdded)
+      .slice(0, max);
+  }
 }

@@ -1,6 +1,7 @@
 import {
   WebSocket,
   isWebSocketPongEvent,
+  connectWebSocket,
 } from "https://deno.land/std/ws/mod.ts";
 import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { PING_TIMEOUT } from "./config.ts";
@@ -32,11 +33,15 @@ export class Peer {
   }
 
   async isOnline(): Promise<Boolean> {
-    if (!this.socket || this.socket.isClosed) {
-      return false;
+    if (this.socket.isClosed && this.isVerified) {
+      // try to reconnect
+      try {
+        this.socket = await connectWebSocket(`${this.hostname}:${this.port}`);
+      } catch {
+        return false;
+      }
     }
     // ping him
-    this.socket.ping();
     const pingPromise = async () => {
       for await (const ev of this.socket) {
         if (isWebSocketPongEvent(ev)) {
@@ -44,7 +49,7 @@ export class Peer {
         }
       }
     };
-    await Promise.race([pingPromise, wait(PING_TIMEOUT)]);
-    return false;
+    this.socket.ping();
+    return await Promise.race([pingPromise, wait(PING_TIMEOUT)]) !== undefined;
   }
 }
