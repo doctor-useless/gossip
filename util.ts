@@ -1,7 +1,6 @@
 import {
   encodeBase64,
   decodeBase64,
-  ByteArray,
 } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 
 export async function wait(timeout: number): Promise<void> {

@@ -1,7 +1,3 @@
-import {
-  WebSocket,
-  isWebSocketPongEvent,
-} from "https://deno.land/std/ws/mod.ts";
 import { ByteArray } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { Peer } from "./peer.ts";
 import {
@@ -9,8 +5,6 @@ import {
   BUCKET_SIZE_MAX,
   LOOKUP_CONCURRENCY,
 } from "./config.ts";
-import { wait } from "./util.ts";
-import { red } from "https://deno.land/std/fmt/colors.ts";
 
 export class Bucket {
   peers: Peer[];
@@ -132,7 +126,7 @@ export class PeerTable {
     return closestPeers;
   }
 
-  async findPeer(publicKey: ByteArray): Promise<Peer | undefined> {
+  findPeer(publicKey: ByteArray): Peer | undefined {
     const distance = calculateDistance(this.publicKey, publicKey);
     return this.buckets[distance].peers.find((p) =>
       p.publicKey?.toString() === publicKey.toString()

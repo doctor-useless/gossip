@@ -1,15 +1,10 @@
 import {
   connectWebSocket,
-  isWebSocketCloseEvent,
-  isWebSocketPingEvent,
-  isWebSocketPongEvent,
   WebSocket,
 } from "https://deno.land/std/ws/mod.ts";
 import { blue, green, red, yellow } from "https://deno.land/std/fmt/colors.ts";
 import {
   ByteArray,
-  hash,
-  box_keyPair_fromSecretKey,
 } from "https://raw.githubusercontent.com/dr-useless/tweetnacl-deno/master/src/nacl.ts";
 import { verifyWork } from "./pow.ts";
 import { Peer } from "./peer.ts";
@@ -36,7 +31,7 @@ export class Client {
   async connect(
     hostname: string,
     port: number,
-  ) {
+  ): Promise<Peer | undefined> {
     try {
       const socket = await connectWebSocket(`${hostname}:${port}`);
       const peer = new Peer(socket, false, hostname, port);
@@ -47,13 +42,15 @@ export class Client {
         return;
       }
 
-      await this.peerTable.addPeer(peer);
+      //await this.peerTable.addPeer(peer);
+      //await this.receivePeerList(socket);
 
-      await this.receivePeerList(socket);
+      console.log(green("ws connected!"), port);
 
-      console.log(green("ws connected!"));
+      return peer;
     } catch (err) {
       console.error(red(`Could not connect to WebSocket: '${err}'`));
+      return;
     }
   }
 
@@ -97,18 +94,21 @@ export class Client {
         try {
           const peerList: Peer[] = JSON.parse(msg);
           if (peerList) {
-            peerList.forEach((peer) => {
+            for await (let peer of peerList) {
               // if not self, add peer to own table
               if (
                 peer.publicKey !== this.publicKey && peer.hostname &&
                 peer.port && !this.peerTable.hasPeer(peer)
               ) {
-                this.connect(
+                const newPeer = await this.connect(
                   (peer.hostname as string),
                   (peer.port as number),
                 );
+                if (newPeer) {
+                  this.peerTable.addPeer(newPeer);
+                }
               }
-            });
+            }
             return;
           } else {
             return;

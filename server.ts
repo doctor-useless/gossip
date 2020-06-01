@@ -1,8 +1,6 @@
 import { serve, ServerRequest } from "https://deno.land/std/http/server.ts";
 import {
   acceptWebSocket,
-  isWebSocketCloseEvent,
-  isWebSocketPingEvent,
   WebSocket,
 } from "https://deno.land/std/ws/mod.ts";
 import { verifyWork } from "./pow.ts";
@@ -61,11 +59,11 @@ export class Server {
         return;
       }
 
-      await this.sendPeerList(socket);
+      //await this.sendPeerList(socket);
 
       await this.peerTable.addPeer(peer);
 
-      //await this.listenForMore(socket);
+      await this.listenForMore(socket);
     } catch (err) {
       console.error(`failed to accept websocket: ${err}`);
       await req.respond({ status: 400 });
@@ -110,7 +108,7 @@ export class Server {
     await socket.send(JSON.stringify(this.peerTable.getPeerList()));
   }
 
-  /*async listenForMore(socket: WebSocket): Promise<void> {
+  async listenForMore(socket: WebSocket): Promise<void> {
     for await (const msg of socket) {
       if (typeof msg === "string") {
         try {
@@ -120,20 +118,36 @@ export class Server {
             // handle request
             switch (data.request.type) {
               case "find_peer":
+                const peers: Peer[] = [];
+                const knownPeer = await this.peerTable.findPeer(
+                  data.request.params.publicKey,
+                );
+                if (knownPeer) {
+                  peers.push(knownPeer);
+                } else {
+                  const closestPeers = await this.peerTable.getClosestPeers(
+                    data.request.params.publicKey,
+                  );
+                  peers.push(...closestPeers);
+                }
                 await socket.send(
                   JSON.stringify(
                     {
                       response: {
+                        id: data.request.id,
                         type: "find_peer",
-                        body: [
-                          ...await this.peerTable.findPeer(
-                            data.request.params.publicKey,
-                          ),
-                        ],
+                        peers: peers.map((p) => {
+                          return {
+                            hostname: p.hostname,
+                            port: p.port,
+                            publicKey: p.publicKey,
+                          };
+                        }),
                       },
                     },
                   ),
                 );
+                break;
               default:
                 console.log(msg);
             }
@@ -145,5 +159,5 @@ export class Server {
         }
       }
     }
-  }*/
+  }
 }
